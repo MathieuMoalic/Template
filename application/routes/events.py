@@ -6,6 +6,7 @@ from sanic.response import json, text
 
 from application.database.db import execute_query, fetch_all, fetch_one
 from application.schemas.schemas import EventCreate, EventUpdate
+from application.team_logos import get_event_logos
 
 bp = Blueprint("events", url_prefix="/events")
 
@@ -46,6 +47,8 @@ async def create_event(request) -> json:
         if not event.get("slug"):
             event["slug"] = slugify(event["name"])
 
+        logos = get_event_logos(event["name"])
+
     except ValidationError as e:
         return json({"message": f"Invalid data: {e.errors()}"}, 400)
 
@@ -61,9 +64,10 @@ async def create_event(request) -> json:
                 status,
                 start_time,
                 actual_start_time,
-                sport_id
+                sport_id,
+                logos
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event["name"],
@@ -74,6 +78,7 @@ async def create_event(request) -> json:
                 event["start_time"],
                 event["actual_start_time"],
                 event["sport_id"],
+                logos,
             ),
         )
     except Error as e:
