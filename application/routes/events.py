@@ -106,5 +106,10 @@ async def update_event(request, event_id: int):
 
 @bp.route("/<event_id:int>", methods=["DELETE"])
 async def delete_event(request, event_id: int):
-
+    try:
+        await execute_query(
+            request.app.ctx.db, "DELETE FROM event WHERE id = ?", (event_id,)
+        )
+    except Error as e:
+        return json({"message": f"An error occurred: {e}"}, 500)
     return text("", 204)
