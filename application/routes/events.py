@@ -5,7 +5,7 @@ from sanic import Blueprint
 from sanic.response import json, text
 
 from application.database.db import execute_query, fetch_all, fetch_one
-from application.schemas.schemas import EventCreate
+from application.schemas.schemas import EventCreate, EventUpdate
 
 bp = Blueprint("events", url_prefix="/events")
 
@@ -84,7 +84,24 @@ async def create_event(request) -> json:
 
 @bp.route("/<event_id:int>", methods=["PATCH"])
 async def update_event(request, event_id: int):
-    event_data = request.json
+    event_data = EventUpdate(**request.json).model_dump()
+    query = "UPDATE event SET "
+    values = []
+    for key, value in event_data.items():
+        if value is None:
+            continue
+        query += f"{key} = ?, "
+        values.append(value)
+
+    query = query.rstrip(", ") + " WHERE id = ?"
+    values.append(event_id)
+
+    try:
+        await execute_query(request.app.ctx.db, query, tuple(values))
+    except Error as e:
+        return json({"message": f"An error occurred: {e}"}, 500)
+
+    return json({"message": "Event updated successfully"})
 
 
 @bp.route("/<event_id:int>", methods=["DELETE"])
