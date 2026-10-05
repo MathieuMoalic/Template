@@ -1,49 +1,93 @@
-from sanic import Blueprint, response
-from application.database.db import fetch_all, fetch_one
+from slugify import slugify
+from aiosqlite import Error
+from pydantic import ValidationError
+from sanic import Blueprint
+from sanic.response import json, text
+
+from application.database.db import execute_query, fetch_all, fetch_one
+from application.schemas.schemas import EventCreate
 
 bp = Blueprint("events", url_prefix="/events")
 
 
 @bp.route("/", methods=["GET"])
-async def get_all_events(request):
-    events = await fetch_all(request.app.ctx.db, "SELECT * FROM event")
+async def get_all_events(request) -> json:
+    try:
+        events = await fetch_all(request.app.ctx.db, "SELECT * FROM event")
+    except Error as e:
+        return json({"message": f"An error occurred: {e}"}, 500)
 
     if not events:
-        return response.json({"message": "No events found"}, status=404)
+        return json({"message": "No events found"}, 404)
 
-    return response.json(events)
+    return json(events)
 
 
-@bp.route("/<event_id>", methods=["GET"])
-async def get_event_by_id(request, event_id):
-    event = await fetch_one(
-        request.app.ctx.db, "SELECT * FROM event WHERE id = ?", (event_id,)
-    )
+@bp.route("/<event_id:int>", methods=["GET"])
+async def get_event_by_id(request, event_id: int) -> json:
+    try:
+        event = await fetch_one(
+            request.app.ctx.db, "SELECT * FROM event WHERE id = ?", (event_id,)
+        )
+    except Error as e:
+        return json({"message": f"An error occurred: {e}"}, 500)
 
-    if event:
-        return response.json(event)
-    else:
-        return response.json({"error": "Event not found"}, status=404)
+    if not event:
+        return json({"message": "Event not found"}, 404)
+
+    return json(event)
 
 
 @bp.route("/", methods=["POST"])
-async def create_event(request):
+async def create_event(request) -> json:
+    try:
+        event = EventCreate(**request.json).model_dump()
+
+        if not event.get("slug"):
+            event["slug"] = slugify(event["name"])
+
+    except ValidationError as e:
+        return json({"message": f"Invalid data: {e.errors()}"}, 400)
+
+    try:
+        await execute_query(
+            request.app.ctx.db,
+            """
+            INSERT INTO event (
+                name,
+                active,
+                slug,
+                type,
+                status,
+                start_time,
+                actual_start_time,
+                sport_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["name"],
+                event["active"],
+                event["slug"],
+                event["type"],
+                event["status"],
+                event["start_time"],
+                event["actual_start_time"],
+                event["sport_id"],
+            ),
+        )
+    except Error as e:
+        return json({"message": f"An error occurred: {e}"}, 500)
+
+    return json({"message": "Event created successfully"}, 201)
+
+
+@bp.route("/<event_id:int>", methods=["PATCH"])
+async def update_event(request, event_id: int):
     event_data = request.json
-    # Your code to validate and save the event to the database
-
-    return response.json(event_data, status=201)
 
 
-@bp.route("/<event_id>", methods=["PATCH"])
-async def update_event(request, event_id):
-    event_data = request.json
-    # Your code to validate and update the event in the database
+@bp.route("/<event_id:int>", methods=["DELETE"])
+async def delete_event(request, event_id: int):
 
-    return response.json(event_data)
-
-
-@bp.route("/<event_id>", methods=["DELETE"])
-async def delete_event(request, event_id):
-    # Your code to delete the event with the given ID from the database
-
-    return response.empty(status=204)
+    return text("", 204)
